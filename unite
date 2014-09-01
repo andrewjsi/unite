@@ -1,0 +1,175 @@
+#!/usr/bin/perl
+# © Copyright 2014 JSS & Hayer. All Rights Reserved.
+
+use strict;
+
+use Cwd;
+
+our $Output;
+our $Tests_failed = 0;
+
+unless (scalar @ARGV) {
+    $0 =~ s:.*/::; #/
+    die "JSS Simple Unit Testing tool (c) 2014 JSS & Hayer\nusage: $0 [--clean] <test dir1> [test dir2] ...\n";
+}
+
+exit &main(@ARGV);
+
+sub main {
+    my $action;
+
+    # első paraméter kezelése. TODO: getopts használatát bevezetni
+    if ($_[0] eq "--clean") {
+        $action = "clean";
+        shift @_;
+    } else {
+        $action = "run";
+    }
+
+    my @dirs = map { s/\/+$//; $_ } @_; # jobbról minden / jelet lecsap
+    my $pwd = getcwd();
+
+    foreach (@dirs) {
+        die "Error: $_: $!\n" unless (-e);
+        die "Error: $_: not a directory\n" unless (-d);
+        die "Error: $_/run: $!\n" unless (-e "$_/run");
+        die "Error: $_/run: not an executable\n" unless (-x "$_/run");
+        die "Error: $_/output.ok: $!\n" unless (-e "$_/output.ok");
+    }
+
+
+    ### RUN
+    ###
+    ###
+    if ($action eq "run") {
+        syswrite STDOUT, sprintf "Running %d tests: ", scalar @dirs;
+
+        my @summary;
+        foreach my $name (@dirs) {
+            syswrite STDOUT, "$name.. ";
+            chdir $pwd."/".$name;
+
+            my $err = 0;
+            $Output = ''; # azért globális, mert a run_quiet() basztatja
+
+            $err += &run_quiet($name, "make") if (-e "Makefile");
+
+            # Ha még nincs hiba, akkor futtatjuk a run-t. Ez azt jelenti, hogy ha a
+            # make hibázott, akkor nem futtatjuk a run-t, mert tök fölösleges. Ha pedig
+            # nem volt Makefile, akkor mindenképp futtatjuk a run-t.
+            unless ($err) {
+                $err += system "./run >output 2>&1";
+
+                # Ha run script hibázott, akkor az output tartalma lesz a hibaüzenet
+                if ($err) {
+                    # az output fájl tartalmát bemásoljuk az $Output változóba
+                    $err += &run_quiet($name, "cat output && false");
+
+                # Ha a run script rendben lefutott, akkor diff-el
+                # összehasonlítjük a kimenetét a várt kimenettel. Ha nem
+                # egyezik, akkor a diff kimenete lesz a hibaüzenet
+                } else {
+                    $err += &run_quiet($name, "diff -u output.ok output");
+                }
+            }
+
+            # README fájl első sorának beolvasása a $description változóba
+            my $fd;
+            open $fd, "<README";
+            my $description = <$fd>;
+            chomp ($description);
+            close $fd;
+
+            push @summary, {
+                name        => $name,
+                err         => $err,
+                output      => $Output,
+                description => $description,
+            };
+        }
+        print "\n\n";
+
+        # tree(\@summary);
+        foreach my $t (@summary) {
+            if ($t->{'err'}) {
+                printf("*** FAILED %s: %s\n",
+                    $t->{'name'},
+                    $t->{'description'},
+                );
+
+                printf "[%s] %s\n", $t->{'name'}, $_ foreach (split(/\n/, $t->{'output'}));
+                printf "\n";
+
+                $Tests_failed++;
+            }
+        }
+
+        if ($Tests_failed) {
+            printf "*** Failed %d tests\n", $Tests_failed;
+            foreach (@summary) {
+                if ($_->{'err'}) {
+                    printf("*** First failed test: %s: %s\n",
+                        $_->{'name'},
+                        $_->{'description'},
+                    );
+                    last;
+                }
+            }
+            return -1;
+        } else {
+            printf "....... All's well, ends well ....... ;-)\n";
+            return 0;
+        }
+
+    ### CLEAN
+    ###
+    ###
+    } elsif ($action eq "clean") {
+        syswrite STDOUT, sprintf "Cleaning %d tests: ", scalar @dirs;
+
+        foreach (@dirs) {
+            syswrite STDOUT, "$_.. ";
+            chdir $pwd."/".$_;
+            &run_quiet($_, "make clean") if (-e "Makefile");
+            unlink "output";
+        }
+        print "\n";
+        return 0; # ha jó, ha nem jó, nem-hibával lépünk ki :)
+    }
+
+}
+
+# $output_buffer = execbuffer(command)
+#
+#   Lefuttatja a megadott shell command-ot. Az STDERR és az STDOUT összekevert
+#   tartalmát visszaadja az output_buffer-ben. A command kilépési kódját a $?
+#   változó hordozza
+sub execbuffer {
+    my $command = shift;
+
+    my $fd;
+    my $buf;
+    open $fd, "$command 2>&1 |";
+    while ($_ = <$fd>) {
+        $buf .= $_;
+    }
+    close $fd;
+    return $buf;
+}
+
+# Lefuttatja a $command változóban megadott shell parancsot, és ha az hibával
+# tér vissza, akkor az $Output bufferbe hozzáfűzi a command kimenetét.
+# Visszatérési érték nem-hiba esetén 0, hiba esetén pedig a $? értéke.
+sub run_quiet {
+    my $name = shift;
+    my $command = shift;
+
+    my $buffer = &execbuffer($command);
+    my $ret = $?;
+
+    if ($ret) {
+        $Output .= $buffer;
+    }
+
+    return $ret;
+}
