@@ -1,4 +1,9 @@
-sutt
-====
+# Unite
 
-Simple Unit Testing Tool
+simple UNIt TEsting tool
+
+## Usage
+
+```
+usage: unite [--clean] <test dir1> [test dir2] ...
+```
