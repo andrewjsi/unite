@@ -91,21 +91,16 @@ sub main {
 
         # tree(\@summary);
         foreach my $t (@summary) {
-            if ($t->{'err'}) {
-                printf("*** FAILED %s: %s\n",
-                    $t->{'name'},
-                    $t->{'description'},
-                );
+            &print_one_summary_line($t);
+        }
 
-                printf "[%s] %s\n", $t->{'name'}, $_ foreach (split(/\n/, $t->{'output'}));
-                printf "\n";
-
-                $Tests_failed++;
-            }
+        # hibás tesztek összeszámolása
+        foreach (@summary) {
+            $Tests_failed++ if ($_->{'err'});
         }
 
         if ($Tests_failed) {
-            printf "*** Failed %d tests\n", $Tests_failed;
+            printf "*** Failed %d tests of %d\n", $Tests_failed, scalar @dirs;
             foreach (@summary) {
                 if ($_->{'err'}) {
                     printf("*** First failed test: %s: %s\n",
@@ -117,7 +112,7 @@ sub main {
             }
             return -1;
         } else {
-            printf "....... All's well, ends well ....... ;-)\n";
+            printf "\n....... All's well, ends well ....... ;-)\n";
             return 0;
         }
 
@@ -135,6 +130,23 @@ sub main {
         }
         print "\n";
         return 0; # ha jó, ha nem jó, nem-hibával lépünk ki :)
+    }
+
+}
+
+sub print_one_summary_line {
+    my $t = shift;
+
+    printf("%s %s: %s\n",
+        ($t->{'err'}) ? "*** FAILED" : "OK  ",
+        $t->{'name'},
+        $t->{'description'},
+    );
+
+    if ($t->{'err'}) {
+        printf "[%s] %s\n", $t->{'name'}, $_ foreach (split(/\n/, $t->{'output'}));
+        printf "\n";
+
     }
 
 }
